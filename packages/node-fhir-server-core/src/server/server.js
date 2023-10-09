@@ -17,6 +17,7 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const proxy = require('./proxy');
+const proxyv2 = require('./proxyv2');
 
 /**
  * @name mergeDefaults
@@ -312,7 +313,9 @@ class Server {
 
   setProxy(actualPort, actualHost) {
     const proxyHandler = proxy(actualPort, actualHost);
+    const proxyHandlerV2 = proxyv2(actualPort,actualHost)
     this.proxyApp.use('/api/v1/*', proxyHandler)
+    this.proxyApp.use('/api/v2/*', proxyHandlerV2)
     this.proxyApp.use((req, res) => {
       const error = {
         resourceType: "OperationOutcome",
