@@ -87,3 +87,23 @@ exports.EVENTS = {
 exports.RESOURCES = {
   PRACTITIONER: 'practitioner',
 };
+
+
+exports.META = {
+  "resourceType": "CapabilityStatement",
+  "status": "active",
+  "date": "2023-10-13T06:20:07-04:00",
+  "publisher": "Not provided",
+  "kind": "instance",
+  "software": {
+      "name": "FHIR Server",
+      "version": "1.4.0"
+  },
+  "implementation": {
+      "description": "FHIR Test Server (R4)"
+  },
+  "fhirVersion": "4.0.0",
+  "format": [
+      "application/fhir+json"
+  ],
+}

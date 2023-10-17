@@ -25,13 +25,8 @@ let getStatementGenerators = (base_version) => {
  * @param {Winston} logger - Instance of Winston's logger
  * @return {Promise<Object>} - Return the capability statement
  */
-let generateCapabilityStatement = ({
-  fhirVersion,
-  profiles,
-  security,
-  statementGenerator = getStatementGenerators,
-}) =>
-  new Promise((resolve, reject) => {
+let generateCapabilityStatement = ({profiles}) => {
+  
     logger.info('Metadata.generateCapabilityStatement');
 
     // create profile list
@@ -46,81 +41,118 @@ let generateCapabilityStatement = ({
           metadata: profiles[profile_name] && profiles[profile_name].metadata,
         };
       })
-      .filter((profile) => profile.versions.indexOf(fhirVersion) !== -1);
 
-    // TODO: REMOVE: Logger deprecatedLogger
-    let deprecatedLogger = deprecate(
-      container.get('default'),
-      'Using the logger this way is deprecated. Please see the documentation on ' +
-        'BREAKING CHANGES in version 2.0.0 for instructions on how to upgrade.'
-    );
-
-    // Get the necessary functions to generate statements
-    let { makeStatement, securityStatement } = statementGenerator(fhirVersion, deprecatedLogger);
-
-    // If we do not have these functions, we cannot generate a new statement
-    if (!makeStatement || !securityStatement) {
-      return reject(errors.internal('Unable to generate metadata for this FHIR specification.'));
-    }
-
-    // Let's start building our confromance/capability statement
-    const serverStatement = {
-      mode: 'server',
-    };
-
-    // Add security information if available
-    if (security) {
-      serverStatement.security = securityStatement(security);
-    }
-
-    // Add operations to resource if they exist.
-    let operations = keys.reduce((ops, profile_name) => {
-      const opsInProfile = profiles[profile_name].operation;
-      if (opsInProfile && opsInProfile.length) {
-        opsInProfile.forEach((opInProfile) => {
-          const op = {
-            name: opInProfile.name,
-            definition: {
-              reference: opInProfile.reference
-                ? opInProfile.reference
-                : `/OperationOutcome/${opInProfile.name}`,
-            },
-          };
-          ops.push(op);
-        });
-      }
-
-      return ops;
-    }, []);
-
-    if (operations && operations.length) {
-      serverStatement.operation = operations;
-    }
-
-    // Make the resource and give it the version so it can only include valid search params
-    let customMakeResource = null;
-    serverStatement.resource = active_profiles.map((profile) => {
-      if (profile.metadata) {
-        customMakeResource = require(profile.metadata).makeResource;
-      } else {
-        customMakeResource = profile.service.makeResource;
-      }
-      let resource = customMakeResource
-        ? customMakeResource(Object.assign(fhirVersion, { key: profile.key }), deprecatedLogger)
-        : profile.makeResource(fhirVersion, profile.key);
-      // Determine the interactions we need to list for this profile
-      resource.interaction = generateInteractions(profile.service, resource.type);
-      return resource;
-    });
+    
 
     // Add the server statement to the main statement
-    return resolve(makeStatement(serverStatement));
-  });
+    return getRestEndpoints(keys,active_profiles)
+}
 
 /**
  * @name exports
  * @summary Metadata service
  */
+
+function getOperations(operations) {
+  let op = []
+  if(operations)
+       op=  operations?.map(operation => {
+      return {
+          "code": operation.name
+      }
+   })
+  return op
+}
+
+function getSearchParams(profile) {
+//read a file resourceType+ searchParams
+let searchParams = require(profile.metadata).makeResource().searchParam
+
+//for each key in searchparams , iterate and add name,description
+if(searchParams)
+  return Object.keys(searchParams).map(param => {
+      const searchParam = searchParams[param];
+      return {
+          name: param,
+          description: searchParam.description,
+          type: searchParam.type,
+          definition: searchParam.definition
+      }
+  })
+  return {}
+}
+
+function buildResources(resourceTypes, profiles) {
+  return Object.keys(resourceTypes).map(resourceType => {
+      const resourceProfile = resourceTypes[resourceType];
+      return {
+          type : resourceType,
+          profile: {
+              reference: `https://www.hl7.org/fhir/${resourceType.toLowerCase()}.html`
+          },
+          interaction: [
+              {
+                  "code": "search-type"
+              },
+              {
+                  "code": "read"
+              },
+              {
+                  "code": "create"
+              },
+              {
+                  "code": "update"
+              },
+              {
+                  "code": "delete"
+              },
+              ...getOperations(resourceProfile.operation)
+          ],
+          searchParam : profiles.map((profile) => {
+            getSearchParams(profile)
+            return resource;
+          })
+      }
+  })
+}
+
+function getRestEndpoints(resourceTypes,profiles) {
+let rest = {
+  "mode": "server",
+  "security": {
+      "extension": [
+          {
+              "extension": [
+                  {
+                      "url": "authorize",
+                      "valueUri": "http://localhost:3000/authorize"
+                  },
+                  {
+                      "url": "token",
+                      "valueUri": "http://localhost:3000/token"
+                  }
+              ],
+              "url": "http://fhir-registry.smarthealthit.org/StructureDefinition/oauth-uris"
+          }
+      ],
+      "cors": true,
+      "service": [
+          {
+              "coding": [
+                  {
+                      "system": "http://hl7.org/fhir/restful-security-service",
+                      "code": "SMART-on-FHIR"
+                  }
+              ],
+              "text": "Custom OAuth2 using SMART-on-FHIR profile (see http://docs.smarthealthit.org)"
+          }
+      ]
+  }
+}
+rest.resource = buildResources(resourceTypes,profiles);
+return rest;
+}
+
 module.exports = {
-  generateCapabilityStatement,
+  generateCapabilityStatement
 };
